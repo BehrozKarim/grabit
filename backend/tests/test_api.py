@@ -80,7 +80,8 @@ def test_rejects_arbitrary_format_expression(client):
 
 def test_expired_media_cannot_create_job(client):
     media = client.post("/api/media", json={"url": URL}).json()
-    client.app.state.media.cache[media["id"]].created_at = 0
+    cache = client.app.state.media
+    cache.cache[media["id"]].created_at = time.monotonic() - cache.settings.metadata_ttl_seconds - 1
     response = client.post("/api/jobs", json={"media_id": media["id"], "format_id": "720"})
     assert response.status_code == 410
 
