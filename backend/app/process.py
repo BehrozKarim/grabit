@@ -14,7 +14,7 @@ class ProcessRunner:
         self,
         args: list[str],
         *,
-        timeout: int,
+        timeout: int | None,
         on_line: Callable[[str], None] | None = None,
     ) -> str:
         process = await asyncio.create_subprocess_exec(

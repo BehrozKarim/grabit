@@ -112,9 +112,10 @@ def create_app(settings: Settings | None = None, downloader=None) -> FastAPI:
         now = time.monotonic()
         while inspections and now - inspections[0] >= 60:
             inspections.popleft()
-        if len(inspections) >= 6:
+        if config.inspections_per_minute and len(inspections) >= config.inspections_per_minute:
             raise MediaError("Too many link lookups. Wait a minute, then try again.", 429)
-        inspections.append(now)
+        if config.inspections_per_minute:
+            inspections.append(now)
         return await media.inspect(body.url)
 
     @app.post("/api/jobs", status_code=202, response_model=JobStatus, dependencies=protected)

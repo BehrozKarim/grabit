@@ -93,7 +93,7 @@ class YtDlpDownloader:
             raise MediaError("Use a link to one video rather than a playlist or multi-video post.")
         if not duration:
             raise MediaError("The video length could not be verified. Try a different video.")
-        if duration > self.settings.max_duration_seconds:
+        if self.settings.max_duration_seconds and duration > self.settings.max_duration_seconds:
             minutes = self.settings.max_duration_seconds // 60
             raise MediaError(f"Choose a video shorter than {minutes} minutes for this server.")
         formats = format_options(info)
@@ -136,16 +136,18 @@ class YtDlpDownloader:
             "%(progress.total_bytes)s %(progress.total_bytes_estimate)s",
             "--concurrent-fragments",
             "1",
-            "--max-filesize",
-            f"{self.settings.max_file_mb}M",
-            "--match-filters",
-            f"!is_live & duration <= {self.settings.max_duration_seconds}",
             "--output",
             str(directory / "media.%(ext)s"),
             "--no-write-info-json",
             "--no-write-thumbnail",
             "--no-write-subs",
         ]
+        if self.settings.max_file_mb:
+            args += ["--max-filesize", f"{self.settings.max_file_mb}M"]
+        match_filter = "!is_live"
+        if self.settings.max_duration_seconds:
+            match_filter += f" & duration <= {self.settings.max_duration_seconds}"
+        args += ["--match-filters", match_filter]
         if request.mode == "audio":
             args += [
                 "--format",
@@ -174,13 +176,14 @@ class YtDlpDownloader:
             if len(numbers) == 3:
                 on_progress(numbers[0] or 0, numbers[1] or numbers[2])
             # Bound temporary space as well as the final output, including unknown-size streams.
-            size = sum(f.stat().st_size for f in directory.iterdir() if f.is_file())
-            if size > self.settings.max_file_mb * 3 * 1024 * 1024:
-                raise MediaError("This download exceeds the temporary storage limit.")
+            if self.settings.max_file_mb:
+                size = sum(f.stat().st_size for f in directory.iterdir() if f.is_file())
+                if size > self.settings.max_file_mb * 3 * 1024 * 1024:
+                    raise MediaError("This download exceeds the temporary storage limit.")
 
         await self.runner.run(
             args + ["--", url],
-            timeout=self.settings.job_timeout_seconds,
+            timeout=self.settings.job_timeout_seconds or None,
             on_line=handle_line,
         )
         files = [
@@ -191,7 +194,10 @@ class YtDlpDownloader:
         if len(files) != 1 or not files[0].is_file():
             raise MediaError("The download did not produce a complete file. Try another format.")
         result = files[0]
-        if result.stat().st_size > self.settings.max_file_mb * 1024 * 1024:
+        if (
+            self.settings.max_file_mb
+            and result.stat().st_size > self.settings.max_file_mb * 1024 * 1024
+        ):
             raise MediaError("The finished file exceeds the size limit. Choose a lower resolution.")
         if result.stat().st_size == 0:
             raise MediaError("The platform returned an empty file. Try another video.")

@@ -40,7 +40,15 @@ class FakeDownloader:
 
 @pytest.fixture
 def settings(tmp_path):
-    return Settings(_env_file=None, env="development", download_dir=tmp_path / "files")
+    return Settings(
+        _env_file=None,
+        env="development",
+        download_dir=tmp_path / "files",
+        max_file_mb=150,
+        max_duration_seconds=1200,
+        job_timeout_seconds=600,
+        inspections_per_minute=6,
+    )
 
 
 @pytest.fixture

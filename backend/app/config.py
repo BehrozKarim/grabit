@@ -12,9 +12,11 @@ class Settings(BaseSettings):
     api_key: str = ""
     allowed_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
     download_dir: Path = Path(".downloads")
-    max_duration_seconds: int = Field(1200, ge=1, le=7200)
-    max_file_mb: int = Field(150, ge=1, le=500)
-    job_timeout_seconds: int = Field(600, ge=10, le=1800)
+    # Zero disables these owner-controlled limits. Render sets bounded values explicitly.
+    max_duration_seconds: int = Field(0, ge=0)
+    max_file_mb: int = Field(0, ge=0)
+    job_timeout_seconds: int = Field(0, ge=0)
+    inspections_per_minute: int = Field(0, ge=0)
     file_ttl_seconds: int = Field(900, ge=60, le=3600)
     metadata_ttl_seconds: int = Field(600, ge=1)
     max_jobs: int = Field(5, ge=1, le=20)
