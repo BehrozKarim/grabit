@@ -2,13 +2,15 @@
 
 A video and audio downloader with a React frontend on Vercel and a separate Python API on Render or your own computer. A small server-only Vercel function connects the default hosted mode without exposing the Render access key.
 
-Paste a public video link, choose an available resolution or MP3/M4A audio, and save the prepared file to your phone or computer.
+Paste a public video link, choose an available resolution or MP3/M4A audio, and prepare it on your device when the platform permits browser access. Server processing is an explicit fallback.
 
 ## First working version
 
 - Mobile-first React and TypeScript interface.
 - Real format discovery and downloads using yt-dlp.
-- MP4/WebM video; MP3 and M4A audio conversion through FFmpeg.
+- Direct source links for complete video/audio files, without buffering the file in Grabit.
+- Browser-side stream merging and MP3/M4A conversion through a lazily loaded, single-thread FFmpeg WebAssembly worker.
+- An explicit server fallback when sources require manifests, credentials, or access the browser cannot obtain.
 - Queued downloads, track progress, cancellation, and recovery after a page refresh in the same tab.
 - Hosted mode works immediately, with connection details supplied by the deployment owner.
 - Optional local/self-hosted mode connects directly to your own backend.
@@ -18,7 +20,7 @@ Paste a public video link, choose an available resolution or MP3/M4A audio, and 
 
 The backend accepts YouTube, Facebook, Instagram, TikTok, and X/Twitter links. These are extractor integrations, not a guarantee that every video on each platform works. Private posts, authentication-required content, DRM, live streams, playlists, and multi-video posts are outside this version's scope. Platform changes, region restrictions, or blocked hosting IPs can prevent downloads.
 
-Verified locally: a real 19-second YouTube video downloaded as H.264/AAC MP4 and converted to MP3, with output checked using ffprobe. Other platforms and the Render deployment still need live verification with representative links. Automated API tests use deterministic fixtures rather than third-party websites.
+Verified locally: a real 19-second YouTube video downloaded through the server as H.264/AAC MP4 and converted to MP3. The browser's actual WASM engine also converted a synthetic AAC fixture to MP3 and merged synthetic H.264/AAC tracks into MP4; downloaded outputs were checked with ffprobe. The live YouTube lookup supplied formats requiring server fallback, and the interface reported that limitation. Other platforms, actual mobile devices and the Render deployment still need live verification with representative links. Automated API tests use deterministic fixtures rather than third-party websites.
 
 ## Project structure
 
@@ -40,7 +42,20 @@ render.yaml                 Free Render web-service blueprint
 .github/workflows/ci.yml    Independent frontend and backend checks
 ```
 
-Service responsibilities are separated, with small inspector/downloader protocols for dependency injection. HTTP routes do not contain extraction logic, and React components do not construct network requests. Browser code lives in `frontend/src`; the server-only deployment adapter lives in `frontend/server`. All extraction and media processing stays in `backend`. Shared validation and formatting live in one place.
+Service responsibilities are separated, with small inspector/downloader protocols for dependency injection. HTTP routes do not contain extraction logic, and React components do not construct network requests. Browser code lives in `frontend/src`; the server-only deployment adapter lives in `frontend/server`. Extraction stays in `backend`; device processing lives in `frontend/src/lib/device.ts` and `processor.ts`. Native FFmpeg handles server fallback. Shared validation and formatting live in one place.
+
+## How downloads are routed
+
+1. The backend resolves metadata and caches minimal source details for ten minutes. `/api/plan` returns only the selected public HTTPS source URLs, without extractor headers, cookies or access keys. The endpoint does not download media or create a server job.
+2. **Complete file:** the browser checks access with a small range request, then shows **Open direct file**. The platform transfers the file directly to the device. Cross-origin sites control the filename and attachment behavior; a browser may open a media player, whose Save/Download action saves the file. Grabit cannot confirm that the browser finished saving it. There is no application size or duration cap on this route.
+3. **Separate tracks or audio conversion:** the browser loads the versioned FFmpeg engine from the frontend's own static assets (about 31 MB uncompressed on first use), reads source data directly from the platform, then merges tracks without video re-encoding or encodes MP3/AAC locally. **Save file** saves the resulting device-local Blob. Closing or reloading the tab loses this result.
+4. **Browser access fails:** Grabit explains the failure and offers **Use server fallback**, with the connected backend's limits shown before the action. Media bytes then pass through that backend and its temporary storage. Fallback is never started automatically.
+
+Browser reads require the platform's CORS permission. Source URLs may expire, depend on the resolver's IP, require unsupported request headers, or use HLS/DASH manifests. Those cases can require fallback even for small videos. Changing Grabit's CORS headers cannot override a platform's policy. This version supports progressive HTTPS sources for device processing; browser-side HLS/DASH fetching is not implemented. A successful lookup is not a guarantee of a device download, and a successful range check cannot guarantee a later full transfer.
+
+Browser conversion and merging use memory, unlike the direct-link route. The combined source budget is one eighth of `navigator.deviceMemory` when available, clamped to 128–1024 MiB; browsers that do not report memory use 512 MiB. This leaves room for buffers, the WASM filesystem, output and the browser. It is separate from the hosted 150 MiB limit. Devices may still run out of memory below this budget. Processing stops after ten minutes; the complete device operation stops after fifteen minutes. Keep the page open while it works. Cancellation terminates the worker and releases its memory; object URLs are released on replacement or unmount.
+
+The engine uses [`@ffmpeg/ffmpeg` 0.12.15 and `@ffmpeg/core` 0.12.10](https://github.com/ffmpegwasm/ffmpeg.wasm). The wrapper is MIT licensed; the distributed core follows FFmpeg and its included libraries' licenses (the package declares GPL-2.0-or-later). Upstream source, license information and build instructions are available in the [FFmpeg.wasm repository](https://github.com/ffmpegwasm/ffmpeg.wasm).
 
 ## Local development
 
@@ -118,7 +133,7 @@ If creating the service manually instead of using a blueprint, use:
 4. Deploy using `npm run build`, with output directory `dist`.
 5. Open Grabit and paste a video link. **Grabit hosted** is the default; visitors do not enter any backend address or key.
 
-Hosted metadata lookups, job creation, progress, cancellation and ticket requests pass through `/api/backend`. The adapter forwards only approved JSON operations to the configured backend, adds the access key server-side, and refuses arbitrary destinations or redirects. Video/audio bytes go directly from Render to the browser using a 60-second ticket. They do not pass through a Vercel function.
+Hosted metadata lookups, device plans, job creation, progress, cancellation and ticket requests pass through `/api/backend`. The adapter forwards only approved JSON operations to the configured backend, adds the access key server-side, and refuses arbitrary destinations or redirects. Device-route media bytes go from the platform directly to the browser. Server-fallback bytes go from Render to the browser using a 60-second ticket. Media bytes never pass through a Vercel function.
 
 This removes the connection prompt; it does not create visitor authentication. Everyone who can use the hosted website shares its hosted backend and resource limits.
 
@@ -139,8 +154,8 @@ The chosen connection and custom backend address are remembered in local storage
 
 | Limit | Render blueprint | Local/self-hosted defaults |
 | --- | --- | --- |
-| Maximum video length | 20 minutes | No application cap |
-| Maximum finished file size | 150 MiB | No application cap |
+| Server fallback video length | 20 minutes | No application cap |
+| Server fallback finished file size | 150 MiB | No application cap |
 | Download execution timeout | 10 minutes | No application cap |
 | Link inspections | 6 per minute | No application rate cap |
 | Active processing | 1 operation | 1 operation |
@@ -148,7 +163,7 @@ The chosen connection and custom backend address are remembered in local storage
 | Ready-file availability | 15 minutes | 15 minutes |
 | Format cache | 10 minutes | 10 minutes |
 
-The backend owner controls limits through `GRABIT_MAX_FILE_MB`, `GRABIT_MAX_DURATION_SECONDS`, `GRABIT_JOB_TIMEOUT_SECONDS`, and `GRABIT_INSPECTIONS_PER_MINUTE`. **Zero disables each respective cap**; positive values enable it, without the former 500 MiB ceiling. These settings belong to the backend, so switching a browser to custom mode cannot remove a hosted server's policy.
+The backend owner controls limits through `GRABIT_MAX_FILE_MB`, `GRABIT_MAX_DURATION_SECONDS`, `GRABIT_JOB_TIMEOUT_SECONDS`, and `GRABIT_INSPECTIONS_PER_MINUTE`. **Zero disables each respective cap**; positive values enable it, without the former 500 MiB ceiling. Size, duration and execution limits apply to server preparation only; metadata discovery and device plans accept longer/larger recorded videos. Lookup rate limits still apply to metadata discovery in either route. Switching a browser to custom mode cannot remove a hosted server's policy.
 
 With a finite size cap, input streams are limited too. Temporary disk usage is checked during download progress and bounded separately to allow audio/video merging. Oversized final files are removed. Uncapped local downloads still depend on available disk space, network speed, platform restrictions and the computer staying on. There is no application-imposed daily or monthly download quota.
 
