@@ -60,6 +60,22 @@ class JobService:
 
     def create(self, request: CreateJobRequest) -> JobStatus:
         cached = self.media.get(request.media_id)
+        if (
+            self.settings.max_duration_seconds
+            and cached.info.duration > self.settings.max_duration_seconds
+        ):
+            raise MediaError(
+                "This video exceeds this server's duration limit. Try device download."
+            )
+        option = next((f for f in cached.info.formats if f.id == request.format_id), None)
+        if (
+            request.mode == "video"
+            and option
+            and option.filesize
+            and self.settings.max_file_mb
+            and option.filesize > self.settings.max_file_mb * 1024 * 1024
+        ):
+            raise MediaError("This format exceeds this server's size limit. Try device download.")
         if request.mode == "audio" and not cached.info.audio_available:
             raise MediaError("No audio track is available for this video.")
         if request.mode == "video" and request.format_id not in [f.id for f in cached.info.formats]:

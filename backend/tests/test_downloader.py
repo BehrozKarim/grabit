@@ -80,7 +80,7 @@ class JsonRunner:
 @pytest.mark.parametrize(
     "info",
     [
-        {"duration": 9999},
+        {"duration": 0},
         {"duration": None},
         {"duration": 30, "is_live": True},
         {"duration": 30, "_type": "playlist"},

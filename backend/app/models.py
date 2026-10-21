@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 
 class InspectRequest(BaseModel):
@@ -17,6 +17,8 @@ class FormatOption(BaseModel):
 
 
 class MediaInfo(BaseModel):
+    # Extractor details stay in the expiring cache, never in the metadata response.
+    _browser_formats: list[dict] = PrivateAttr(default_factory=list)
     id: str
     title: str
     platform: str
@@ -32,6 +34,19 @@ class CreateJobRequest(BaseModel):
     mode: Literal["video", "audio"] = "video"
     format_id: str | None = Field(default=None, max_length=80)
     audio_format: Literal["mp3", "m4a"] = "mp3"
+
+
+class BrowserSource(BaseModel):
+    url: str
+    extension: str
+    filesize: int | None = None
+
+
+class BrowserPlan(BaseModel):
+    route: Literal["direct", "merge", "convert", "server"]
+    sources: list[BrowserSource] = Field(default_factory=list)
+    extension: str | None = None
+    reason: str | None = None
 
 
 class JobStatus(BaseModel):

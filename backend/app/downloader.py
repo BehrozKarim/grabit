@@ -1,19 +1,14 @@
 import json
-import math
 import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from app.browser import browser_formats
 from app.config import Settings
 from app.errors import MediaError
 from app.models import CreateJobRequest, FormatOption, MediaInfo
 from app.process import ProcessRunner
-
-
-def positive_number(value: object) -> float | None:
-    if isinstance(value, (int, float)) and math.isfinite(value) and value > 0:
-        return float(value)
-    return None
+from app.values import positive_number
 
 
 def format_options(info: dict) -> list[FormatOption]:
@@ -93,9 +88,6 @@ class YtDlpDownloader:
             raise MediaError("Use a link to one video rather than a playlist or multi-video post.")
         if not duration:
             raise MediaError("The video length could not be verified. Try a different video.")
-        if self.settings.max_duration_seconds and duration > self.settings.max_duration_seconds:
-            minutes = self.settings.max_duration_seconds // 60
-            raise MediaError(f"Choose a video shorter than {minutes} minutes for this server.")
         formats = format_options(info)
         audio_available = any(
             f.get("acodec") not in (None, "none") and not f.get("has_drm")
@@ -106,7 +98,7 @@ class YtDlpDownloader:
         thumbnail = info.get("thumbnail")
         if thumbnail and not str(thumbnail).startswith("https://"):
             thumbnail = None
-        return MediaInfo(
+        media = MediaInfo(
             id=media_id,
             title=str(info.get("title") or "Untitled video")[:300],
             platform=platform,
@@ -116,6 +108,8 @@ class YtDlpDownloader:
             formats=formats,
             audio_available=audio_available,
         )
+        media._browser_formats = browser_formats(info)
+        return media
 
     async def download(
         self,

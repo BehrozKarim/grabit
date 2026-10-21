@@ -12,12 +12,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.background import BackgroundTask
 
+from app.browser import browser_plan
 from app.config import Settings
 from app.downloader import YtDlpDownloader
 from app.errors import MediaError
 from app.jobs import JobService
 from app.media import MediaService
-from app.models import CreateJobRequest, DownloadTicket, InspectRequest, JobStatus, MediaInfo
+from app.models import (
+    BrowserPlan,
+    CreateJobRequest,
+    DownloadTicket,
+    InspectRequest,
+    JobStatus,
+    MediaInfo,
+)
 from app.process import ProcessRunner
 
 
@@ -117,6 +125,10 @@ def create_app(settings: Settings | None = None, downloader=None) -> FastAPI:
         if config.inspections_per_minute:
             inspections.append(now)
         return await media.inspect(body.url)
+
+    @app.post("/api/plan", response_model=BrowserPlan, dependencies=protected)
+    async def device_plan(body: CreateJobRequest):
+        return browser_plan(media.get(body.media_id).info, body)
 
     @app.post("/api/jobs", status_code=202, response_model=JobStatus, dependencies=protected)
     async def create_job(body: CreateJobRequest):
