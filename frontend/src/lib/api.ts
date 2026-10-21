@@ -1,4 +1,4 @@
-import type { Connection, Job, JobRequest, MediaInfo, ServerConfig } from '../types'
+import type { BrowserPlan, Connection, Job, JobRequest, MediaInfo, ServerConfig } from '../types'
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -77,6 +77,10 @@ export class GrabitApi {
 
   createJob(request: JobRequest, signal?: AbortSignal) {
     return this.request<Job>('/api/jobs', { method: 'POST', body: JSON.stringify(request), signal })
+  }
+
+  plan(request: JobRequest, signal?: AbortSignal) {
+    return this.request<BrowserPlan>('/api/plan', { method: 'POST', body: JSON.stringify(request), signal })
   }
 
   job(id: string, signal?: AbortSignal) {

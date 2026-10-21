@@ -9,11 +9,15 @@ import { useDownloader } from './hooks/useDownloader'
 import { Settings } from './components/Settings'
 import { MediaResult } from './components/MediaResult'
 import { DownloadStatus } from './components/DownloadStatus'
+import { DeviceStatus } from './components/DeviceStatus'
+import { useDeviceDownload } from './hooks/useDeviceDownload'
 import type { Connection, ServerConfig } from './types'
 
 function Downloader({ connection, onSettings }: { connection: Connection; onSettings: () => void }) {
   const api = useMemo(() => new GrabitApi(connection), [connection])
-  const { media, job, busy, error, inspect, createJob, cancel, save } = useDownloader(api)
+  const { media, job, busy: serverBusy, error, inspect, createJob, cancel, save } = useDownloader(api)
+  const device = useDeviceDownload(api)
+  const busy = serverBusy || device.working
   const [url, setUrl] = useState('')
   const [clipboardError, setClipboardError] = useState('')
   const [elapsed, setElapsed] = useState(0)
@@ -21,6 +25,12 @@ function Downloader({ connection, onSettings }: { connection: Connection; onSett
   const input = useRef<HTMLInputElement>(null)
   const results = useRef<HTMLDivElement>(null)
   const active = !!job && ['queued', 'downloading', 'processing'].includes(job.status)
+  const fallbackOption = media?.formats.find(f => f.id === device.fallback?.format_id)
+  const fallbackBlocked = config && media && device.fallback ?
+    config.max_duration_seconds > 0 && media.duration > config.max_duration_seconds ?
+      'This video is too long for this server. Connect your own backend in Settings to prepare it there.' :
+      device.fallback.mode === 'video' && config.max_file_mb > 0 && (fallbackOption?.filesize || 0) > config.max_file_mb * 1024 * 1024 ?
+        'This source exceeds the server’s file-size limit. Try a lower resolution or your own backend.' : null : null
 
   useEffect(() => {
     const controller = new AbortController()
@@ -43,6 +53,7 @@ function Downloader({ connection, onSettings }: { connection: Connection; onSett
     setClipboardError('')
     setElapsed(0)
     if (connection.mode === 'custom' && !connection.url) { onSettings(); return }
+    device.reset()
     void inspect(url)
   }
 
@@ -74,10 +85,12 @@ function Downloader({ connection, onSettings }: { connection: Connection; onSett
         {(error.includes('key') || error.includes('Settings')) && <button className="text-button" type="button" onClick={onSettings}>Open Settings <ArrowRightIcon size={16} /></button>}
       </div></div>}
       <div ref={results}>
-        {media && !active && job?.status !== 'ready' && <MediaResult key={media.id} media={media} busy={busy} onDownload={request => void createJob(request)} />}
+        {media && !active && job?.status !== 'ready' && <MediaResult key={media.id} media={media} busy={busy} onDownload={request => void device.download(media, request)} />}
+        {device.device && !active && job?.status !== 'ready' && <DeviceStatus device={device.device} config={config} busy={busy} fallbackBlocked={fallbackBlocked}
+          onCancel={device.cancel} onFallback={() => { if (device.fallback && !fallbackBlocked) { void createJob(device.fallback); device.reset() } }} />}
         {job && <DownloadStatus job={job} busy={busy} onCancel={() => void cancel()} onSave={() => void save()} />}
       </div>
-      <div className="panel-foot"><span><CheckCircleIcon size={17} aria-hidden /> {connection.mode === 'hosted' ? 'Grabit hosted' : 'Your backend'}</span><span>{config ? [
+      <div className="panel-foot"><span><CheckCircleIcon size={17} aria-hidden /> {connection.mode === 'hosted' ? 'Grabit hosted' : 'Your backend'}</span><span>Server fallback: {config ? [
         config.max_duration_seconds ? `${Math.floor(config.max_duration_seconds / 60)} min max` : null,
         config.max_file_mb ? `${config.max_file_mb} MiB max` : null,
       ].filter(Boolean).join(' · ') || 'No size or duration cap' : 'Personal downloader'}</span></div>

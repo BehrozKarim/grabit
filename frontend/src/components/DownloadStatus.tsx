@@ -22,6 +22,7 @@ export function DownloadStatus({ job, busy, onCancel, onSave }: Props) {
 
   return (
     <section className={`download-status ${job.status}`} aria-labelledby="download-status-title">
+      <p className="eyebrow">SERVER FALLBACK</p>
       <div className="status-heading">
         {active ? <SpinnerGapIcon className="spin" size={26} aria-hidden /> : job.status === 'ready' && !expired ? <CheckCircleIcon size={28} weight="fill" aria-hidden /> : <WarningCircleIcon size={26} aria-hidden />}
         <div><h2 id="download-status-title" role="status">{labels[job.status]}</h2><p className="muted status-filename">{job.filename || job.title}</p></div>

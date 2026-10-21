@@ -48,11 +48,11 @@ export function MediaResult({ media, busy, onDownload }: Props) {
         <button className="button primary prepare-button" type="button" disabled={busy}
           onClick={() => onDownload({ media_id: media.id, mode, format_id: mode === 'video' ? formatId : undefined, audio_format: audioFormat })}>
           {busy ? <SpinnerGapIcon className="spin" size={20} /> : <ArrowDownIcon size={20} />}
-          Prepare {mode === 'video' ? 'video' : audioFormat.toUpperCase()}
+          Prepare {mode === 'video' ? 'video' : audioFormat.toUpperCase()} on device
         </button>
       </div>
       <p className="field-hint">{mode === 'video' && current?.filesize ? `About ${filesize(current.filesize)} before combining audio. ` : ''}
-        Available quality depends on the original. Files are prepared on your server.
+        Direct download when possible. Merging and conversion run on your device (about 31 MB engine download on first use). Server fallback is optional.
       </p>
     </section>
   )

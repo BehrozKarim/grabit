@@ -178,3 +178,9 @@ progress::-moz-progress-bar { background: var(--primary); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+.device-status { margin-block: 22px; padding: 20px 0; border-top: 1px solid var(--line, #dde3dc); }
+.device-status > p { margin-bottom: 12px; }
+.device-status .button { display: inline-flex; text-decoration: none; margin-block: 4px 10px; }
+.device-status progress { display: block; width: 100%; height: 10px; accent-color: #4d6953; margin: 16px 0; }
+.device-status .text-button { margin-bottom: 12px; }

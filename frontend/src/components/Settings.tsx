@@ -46,7 +46,7 @@ export function Settings({ connection, onSave, onClose }: Props) {
         <div><p className="eyebrow">YOUR CONNECTION</p><h2 id="settings-title">Make yourself at home.</h2></div>
         <button type="button" className="icon-button" onClick={onClose} aria-label="Close settings"><XIcon size={22} /></button>
       </div>
-      <p className="muted">Use Grabit’s hosted server, or connect your own.</p>
+        <p className="muted">Choose a backend for link lookups and optional server fallback. Device downloads go straight to your browser.</p>
       <form onSubmit={submit}>
         <fieldset className="connection-picker">
           <legend>Download server</legend>
@@ -67,7 +67,7 @@ export function Settings({ connection, onSave, onClose }: Props) {
         <input id="access-key" type="password" placeholder="Your server’s access key" value={key} disabled={busy}
           onChange={e => { setKey(e.target.value); setConnected(false) }} autoComplete="current-password" aria-describedby="key-hint" />
         <p id="key-hint" className="field-hint">Leave empty for a local backend without authentication. Keys stay in this tab’s session.</p>
-        <p className="field-hint">Limits come from your backend. A default local setup has no file-size or video-length cap.</p>
+        <p className="field-hint">Server fallback limits come from your backend. A default local setup has no server file-size or video-length cap.</p>
         </>}
         {error && <p className="inline-error" role="alert">{error}</p>}
         {connected && <p className="connection-success" role="status"><CheckCircleIcon size={20} /> Connected. You’re ready to grab a video.</p>}

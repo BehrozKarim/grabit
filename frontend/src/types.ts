@@ -52,3 +52,25 @@ export interface ServerConfig {
   file_ttl_seconds: number
   platforms: string[]
 }
+
+export interface BrowserSource {
+  url: string
+  extension: string
+  filesize: number | null
+}
+
+export interface BrowserPlan {
+  route: 'direct' | 'merge' | 'convert' | 'server'
+  sources: BrowserSource[]
+  extension: string | null
+  reason: string | null
+}
+
+export interface DeviceDownload {
+  status: 'working' | 'ready' | 'fallback' | 'cancelled'
+  message: string
+  progress: number | null
+  url?: string
+  filename?: string
+  direct?: boolean
+}

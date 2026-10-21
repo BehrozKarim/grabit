@@ -46,7 +46,7 @@ export function createHostedHandler(environment: HostedEnvironment, allowLocal =
     const path = incoming.searchParams.get('path') || ''
     const method = request.method
     const allowed = (method === 'GET' && (path === '/api/config' || jobPath.test(path))) ||
-      (method === 'POST' && (path === '/api/media' || path === '/api/jobs' || ticketPath.test(path))) ||
+      (method === 'POST' && (path === '/api/media' || path === '/api/plan' || path === '/api/jobs' || ticketPath.test(path))) ||
       (method === 'DELETE' && jobPath.test(path))
     if (!allowed) return error('This API operation is not available.', 404)
 
