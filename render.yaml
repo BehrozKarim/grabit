@@ -1,0 +1,28 @@
+# Personal use on Render's Free plan. No database or paid worker required.
+services:
+  - type: web
+    name: grabit-api
+    runtime: python
+    plan: free
+    region: frankfurt
+    rootDir: backend
+    buildCommand: pip install -r requirements.lock
+    startCommand: >-
+      uvicorn app.main:create_app --factory --host 0.0.0.0
+      --port $PORT --workers 1 --no-access-log
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.12
+      - key: GRABIT_ENV
+        value: production
+      - key: GRABIT_API_KEY
+        generateValue: true
+      - key: GRABIT_ALLOWED_ORIGINS
+        sync: false
+      - key: GRABIT_MAX_DURATION_SECONDS
+        value: "1200"
+      - key: GRABIT_MAX_FILE_MB
+        value: "150"
+      - key: GRABIT_FILE_TTL_SECONDS
+        value: "900"
