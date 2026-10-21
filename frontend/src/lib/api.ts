@@ -21,7 +21,8 @@ export class GrabitApi {
   constructor(readonly connection: Connection) {}
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    if (!this.connection.url) {
+    const hosted = this.connection.mode === 'hosted'
+    if (!hosted && !this.connection.url) {
       throw new ApiError('Add your backend address in Settings to get started.', 0)
     }
     const controller = new AbortController()
@@ -31,12 +32,13 @@ export class GrabitApi {
     if (originalSignal?.aborted) controller.abort()
     const timer = setTimeout(abort, 180_000)
     try {
-      const response = await fetch(`${this.connection.url}${path}`, {
+      const endpoint = hosted ? `/api/backend?path=${encodeURIComponent(path)}` : `${this.connection.url}${path}`
+      const response = await fetch(endpoint, {
         ...init,
         signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
-          ...(this.connection.key ? { Authorization: `Bearer ${this.connection.key}` } : {}),
+          ...(!hosted && this.connection.key ? { Authorization: `Bearer ${this.connection.key}` } : {}),
           ...init.headers,
         },
         credentials: 'omit',
@@ -87,8 +89,11 @@ export class GrabitApi {
 
   async downloadUrl(id: string) {
     const ticket = await this.request<{ url: string }>(`/api/jobs/${encodeURIComponent(id)}/ticket`, { method: 'POST' })
-    const url = new URL(ticket.url, this.connection.url)
-    if (url.origin !== this.connection.url || !url.pathname.startsWith('/api/files/')) {
+    const url = this.connection.mode === 'hosted' ? new URL(ticket.url) : new URL(ticket.url, this.connection.url)
+    const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+    if ((url.protocol !== 'https:' && !(loopback && url.protocol === 'http:')) || url.username || url.password ||
+      (this.connection.mode === 'custom' && url.origin !== this.connection.url) ||
+      url.pathname !== `/api/files/${encodeURIComponent(id)}` || !url.searchParams.get('ticket')) {
       throw new ApiError('The server returned an invalid download link.', 0)
     }
     return url.href

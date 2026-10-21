@@ -1,4 +1,5 @@
 export interface Connection {
+  mode: 'hosted' | 'custom'
   url: string
   key: string
 }

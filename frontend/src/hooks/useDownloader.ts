@@ -16,7 +16,7 @@ export function useDownloader(api: GrabitApi) {
 
   useEffect(() => {
     const controller = new AbortController()
-    const storageKey = `grabit.job:${api.connection.url}`
+    const storageKey = `grabit.job:${api.connection.mode}:${api.connection.url}`
     let savedId: string | null = null
     try { savedId = sessionStorage.getItem(storageKey) } catch { /* Session storage is optional. */ }
     if (savedId) {
@@ -73,7 +73,7 @@ export function useDownloader(api: GrabitApi) {
     setError('')
     setMedia(null)
     setJob(null)
-    try { sessionStorage.removeItem(`grabit.job:${api.connection.url}`) } catch { /* Optional. */ }
+    try { sessionStorage.removeItem(`grabit.job:${api.connection.mode}:${api.connection.url}`) } catch { /* Optional. */ }
     try {
       const result = await api.inspect(url.trim(), controller.signal)
       if (!controller.signal.aborted) setMedia(result)
@@ -94,7 +94,7 @@ export function useDownloader(api: GrabitApi) {
       const result = await api.createJob(request, controller.signal)
       if (!controller.signal.aborted) {
         setJob(result)
-        try { sessionStorage.setItem(`grabit.job:${api.connection.url}`, result.id) } catch { /* Optional. */ }
+        try { sessionStorage.setItem(`grabit.job:${api.connection.mode}:${api.connection.url}`, result.id) } catch { /* Optional. */ }
       }
     } catch (error) {
       if (!controller.signal.aborted) setError(readableError(error))
