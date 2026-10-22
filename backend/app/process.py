@@ -1,10 +1,13 @@
 import asyncio
 import contextlib
+import logging
 import os
 import signal
 from collections.abc import Callable
 
 from app.errors import MediaError, friendly_error
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessRunner:
@@ -74,5 +77,9 @@ class ProcessRunner:
                 raise MediaError("This request took too long. Try a shorter video.", 504) from error
             raise
         if process.returncode:
-            raise MediaError(friendly_error(errors.decode("utf-8", errors="replace")))
+            message = friendly_error(errors.decode("utf-8", errors="replace"))
+            # Only static, classified messages: stderr/arguments may contain signed
+            # source URLs, cookie paths or other credentials.
+            logger.warning("Media process exited with code %s: %s", process.returncode, message)
+            raise MediaError(message)
         return "\n".join(output)

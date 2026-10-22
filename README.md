@@ -100,7 +100,7 @@ On macOS/Linux, use `.venv/bin/python` instead of `.venv/Scripts/python` and `cp
 5. Deploy, then open the service's `/health` path. It should return `{"status":"ok"}`.
 6. In the service's Environment settings, copy the generated `GRABIT_API_KEY`. Store it as the server-only `GRABIT_BACKEND_API_KEY` in Vercel. Never prefix it with `VITE_` or put it in browser code.
 
-The native Render environment supplies FFmpeg and Node.js. `requirements.lock` installs yt-dlp and its JavaScript challenge dependency. The Python runtime is pinned in the blueprint. The start command deliberately uses one worker and disables access logs containing temporary download tickets.
+The native Render environment supplies FFmpeg and Node.js. `requirements.lock` installs yt-dlp and its JavaScript challenge dependency. The blueprint pins Python and the Node 24 major version. Each build prints a `GRABIT_DIAGNOSTICS` runtime report. The start command deliberately uses one worker and disables access logs containing temporary download tickets.
 
 If creating the service manually instead of using a blueprint, use:
 
@@ -109,10 +109,11 @@ If creating the service manually instead of using a blueprint, use:
 | Root directory | `backend` |
 | Runtime | Python |
 | Plan | Free |
-| Build command | `pip install -r requirements.lock` |
+| Build command | `pip install -r requirements.lock && python -m app.diagnostics` |
 | Start command | `uvicorn app.main:create_app --factory --host 0.0.0.0 --port $PORT --workers 1 --no-access-log` |
 | Health check | `/health` |
 | `PYTHON_VERSION` | `3.12.12` |
+| `NODE_VERSION` | `24` |
 | `GRABIT_ENV` | `production` |
 | `GRABIT_API_KEY` | A randomly generated secret of at least 24 characters |
 | `GRABIT_ALLOWED_ORIGINS` | `[]` for hosted proxy mode; exact frontend origins for direct custom access |
@@ -174,6 +175,24 @@ With a finite size cap, input streams are limited too. Temporary disk usage is c
 Choose an existing source resolution instead of re-encoding video; this service does not upscale or transcode video.
 
 Render's free service sleeps after inactivity and can take about a minute to wake. Files and job metadata disappear on restart or redeploy. The app explains these cases and lets you fetch the link again. Free hosting has bandwidth/build limits and can suspend heavy usage. Keep it personal and leave out a payment method if your intent is suspension rather than paid overages. Review [Render's current free-service limits](https://render.com/docs/free).
+
+## When YouTube works locally but fails on Render
+
+First distinguish a runtime problem from platform verification. A bot-verification response does not mean the video is private. YouTube may treat requests from your hosting network differently from requests from your home connection. The app reports bot verification, explicit IP blocking, missing PO tokens and JavaScript verification failures separately. Failed subprocesses log only the classified message, without raw stderr or signed source URLs.
+
+For a diagnostic on Render Free, no interactive shell is needed:
+
+1. Deploy the latest commit. If using a Blueprint, sync its updated build command and `NODE_VERSION`. For a manually created service, set the build command to `pip install -r requirements.lock && python -m app.diagnostics` and add `NODE_VERSION=24`.
+2. Add the temporary environment variable `GRABIT_DIAGNOSTIC_YOUTUBE_URL=https://www.youtube.com/watch?v=Ir2UgY-3YdU` to the Render service.
+3. Choose **Save, rebuild, and deploy** (or trigger **Manual Deploy → Deploy latest commit** after saving). A restart without a build does not run the diagnostic.
+4. Find `GRABIT_DIAGNOSTICS` in the build logs. It lists Python, yt-dlp, yt-dlp-ejs and Node versions, whether FFmpeg/ffprobe are available, and the sanitized metadata-lookup result. It never downloads a video, prints a source URL or reports access keys/cookies. An upstream rejection does not fail deployment. Without the environment variable, only local runtime checks run.
+5. Remove the temporary variable after collecting the report so future builds do not make another YouTube request.
+
+You can run the same check locally with `python -m app.diagnostics --youtube-url "https://www.youtube.com/watch?v=Ir2UgY-3YdU"` from `backend/`.
+
+If Node is missing/unsupported or yt-dlp-ejs is missing, fix the runtime/dependency installation and rebuild. If the runtime is available but YouTube requests bot verification, another video or a larger size limit will not address that response. A PO-token failure is a different case: follow [yt-dlp's maintained PO Token Guide](https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide) before adding a provider. Providers are not a guaranteed remedy for an IP block.
+
+Changing cloud hosts does not guarantee YouTube access. A backend on your home network, reached through an authenticated HTTPS connection, can still serve the same Vercel website on your phone. It requires that computer to remain on. [Cloudflare Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/) offer temporary testing URLs without a purchased domain; URLs change on restart and have no uptime guarantee. Use a production backend access key before exposing a backend this way. Account cookies and third-party proxies require separate setup and are not enabled by this application.
 
 ## Checks
 

@@ -25,7 +25,7 @@ async def test_process_cancellation_terminates_child():
         await task
 
 
-async def test_platform_error_is_sanitized():
+async def test_platform_error_is_sanitized(caplog):
     with pytest.raises(MediaError, match="blocked") as captured:
         await ProcessRunner().run(
             [
@@ -36,3 +36,5 @@ async def test_platform_error_is_sanitized():
             timeout=5,
         )
     assert "secret-url" not in str(captured.value)
+    assert "secret-url" not in caplog.text
+    assert "Media process exited with code 1" in caplog.text

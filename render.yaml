@@ -6,7 +6,7 @@ services:
     plan: free
     region: frankfurt
     rootDir: backend
-    buildCommand: pip install -r requirements.lock
+    buildCommand: pip install -r requirements.lock && python -m app.diagnostics
     startCommand: >-
       uvicorn app.main:create_app --factory --host 0.0.0.0
       --port $PORT --workers 1 --no-access-log
@@ -14,6 +14,8 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.12
+      - key: NODE_VERSION
+        value: "24"
       - key: GRABIT_ENV
         value: production
       - key: GRABIT_API_KEY
