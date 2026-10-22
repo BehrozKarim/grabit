@@ -39,6 +39,7 @@ def node_version() -> str:
 
 
 async def collect_diagnostics(youtube_url: str | None = None) -> dict:
+    settings = Settings(_env_file=None, env="development")
     node = node_version()
     match = re.fullmatch(r"v(\d+)\.\d+\.\d+", node)
     report = {
@@ -49,15 +50,23 @@ async def collect_diagnostics(youtube_url: str | None = None) -> dict:
         "node_supported": bool(match and int(match[1]) >= 22),
         "ffmpeg_available": bool(shutil.which("ffmpeg")),
         "ffprobe_available": bool(shutil.which("ffprobe")),
+        "youtube_cookies_configured": settings.youtube_cookies_file is not None,
     }
     if not youtube_url:
+        return report
+    if settings.youtube_cookies_file and not settings.youtube_cookies_file.is_file():
+        # Secret mounts are guaranteed at runtime, not in every build environment.
+        report["youtube"] = {
+            "status": "skipped",
+            "message": "The configured cookie secret is not mounted here. Test at runtime.",
+        }
         return report
     try:
         url, provider = validate_media_url(youtube_url)
         if provider != "YouTube":
             raise MediaError("The diagnostic requires a public YouTube video link.")
         # Metadata only; no production key, application startup or download is needed.
-        engine = YtDlpDownloader(Settings(_env_file=None, env="development"), ProcessRunner())
+        engine = YtDlpDownloader(settings, ProcessRunner())
         media = await engine.inspect(url, provider, "0" * 32)
         report["youtube"] = {
             "status": "ok",

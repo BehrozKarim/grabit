@@ -5,9 +5,11 @@ from pathlib import Path
 
 from app.browser import browser_formats
 from app.config import Settings
+from app.cookies import YouTubeSession
 from app.errors import MediaError
 from app.links import resolve_share_url
 from app.models import CreateJobRequest, FormatOption, MediaInfo
+from app.platforms import validate_media_url
 from app.process import ProcessRunner
 from app.values import positive_number
 
@@ -53,10 +55,10 @@ class YtDlpDownloader:
     def __init__(self, settings: Settings, runner: ProcessRunner):
         self.settings = settings
         self.runner = runner
+        self.youtube_session = YouTubeSession(settings.youtube_cookies_file, settings.download_dir)
 
-    @staticmethod
-    def base_args() -> list[str]:
-        return [
+    def base_args(self, url: str) -> list[str]:
+        args = [
             sys.executable,
             "-m",
             "yt_dlp",
@@ -75,17 +77,31 @@ class YtDlpDownloader:
             "--use-extractors",
             "youtube.*,facebook.*,instagram.*,tiktok.*,twitter.*",
         ]
+        if validate_media_url(url)[1] == "YouTube":
+            cookie_file = self.youtube_session.prepare()
+            if cookie_file:
+                args += ["--cookies", str(cookie_file)]
+        return args
 
     async def inspect(self, url: str, platform: str, media_id: str) -> MediaInfo:
         url = await resolve_share_url(url)
         raw = await self.runner.run(
-            self.base_args() + ["--dump-single-json", "--skip-download", "--", url],
+            self.base_args(url) + ["--dump-single-json", "--skip-download", "--", url],
             timeout=90,
         )
         try:
             info = json.loads(raw)
         except (ValueError, TypeError) as error:
             raise MediaError("The platform returned an unreadable response. Try again.") from error
+        cookie_session = platform == "YouTube" and self.settings.youtube_cookies_file is not None
+        if cookie_session and (
+            info.get("availability") not in ("public", "unlisted")
+            or (positive_number(info.get("age_limit")) or 0) >= 18
+        ):
+            raise MediaError(
+                "This service only supports public, unrestricted YouTube videos. "
+                "Cookies cannot be used to download private or members-only content."
+            )
         duration = positive_number(info.get("duration"))
         if info.get("is_live") or info.get("live_status") in ("is_live", "is_upcoming"):
             raise MediaError("Live and upcoming streams are not supported. Try a recorded video.")
@@ -111,7 +127,8 @@ class YtDlpDownloader:
             formats=formats,
             audio_available=audio_available,
         )
-        media._browser_formats = browser_formats(info)
+        # A shared website must never receive source URLs from an account session.
+        media._browser_formats = [] if cookie_session else browser_formats(info)
         media._source_url = url
         return media
 
@@ -123,7 +140,7 @@ class YtDlpDownloader:
         directory: Path,
         on_progress: Callable[[int, int | None], None],
     ) -> Path:
-        args = self.base_args() + [
+        args = self.base_args(url) + [
             "--no-simulate",
             "--newline",
             "--progress",
@@ -143,6 +160,9 @@ class YtDlpDownloader:
         if self.settings.max_file_mb:
             args += ["--max-filesize", f"{self.settings.max_file_mb}M"]
         match_filter = "!is_live"
+        if media.platform == "YouTube" and self.settings.youtube_cookies_file is not None:
+            # Recheck access during download in case availability changed after lookup.
+            match_filter += " & availability ~= '^(public|unlisted)$' & age_limit <? 18"
         if self.settings.max_duration_seconds:
             # Missing extractor metadata is common for public Instagram reels.
             match_filter += f" & duration <=? {self.settings.max_duration_seconds}"

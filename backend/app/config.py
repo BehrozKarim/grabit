@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     api_key: str = ""
     allowed_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
     download_dir: Path = Path(".downloads")
+    youtube_cookies_file: Path | None = None
     # Zero disables these owner-controlled limits. Render sets bounded values explicitly.
     max_duration_seconds: int = Field(0, ge=0)
     max_file_mb: int = Field(0, ge=0)

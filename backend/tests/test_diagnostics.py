@@ -73,3 +73,14 @@ async def test_diagnostic_rejects_non_youtube_sources(monkeypatch, url):
     report = await diagnostics.collect_diagnostics(url)
     assert report["youtube"]["status"] == "failed"
     inspect.assert_not_called()
+
+
+async def test_build_probe_skips_when_cookie_secret_is_only_available_at_runtime(monkeypatch):
+    inspect = AsyncMock()
+    monkeypatch.setenv("GRABIT_YOUTUBE_COOKIES_FILE", "/missing-secret-for-build/youtube.txt")
+    monkeypatch.setattr(diagnostics.YtDlpDownloader, "inspect", inspect)
+    report = await diagnostics.collect_diagnostics("https://youtu.be/test")
+    assert report["youtube_cookies_configured"]
+    assert report["youtube"]["status"] == "skipped"
+    assert "missing-secret-for-build" not in str(report)
+    inspect.assert_not_called()

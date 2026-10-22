@@ -192,7 +192,21 @@ You can run the same check locally with `python -m app.diagnostics --youtube-url
 
 If Node is missing/unsupported or yt-dlp-ejs is missing, fix the runtime/dependency installation and rebuild. If the runtime is available but YouTube requests bot verification, another video or a larger size limit will not address that response. A PO-token failure is a different case: follow [yt-dlp's maintained PO Token Guide](https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide) before adding a provider. Providers are not a guaranteed remedy for an IP block.
 
-Changing cloud hosts does not guarantee YouTube access. A backend on your home network, reached through an authenticated HTTPS connection, can still serve the same Vercel website on your phone. It requires that computer to remain on. [Cloudflare Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/) offer temporary testing URLs without a purchased domain; URLs change on restart and have no uptime guarantee. Use a production backend access key before exposing a backend this way. Account cookies and third-party proxies require separate setup and are not enabled by this application.
+Changing cloud hosts does not guarantee YouTube access. A backend on your home network, reached through an authenticated HTTPS connection, can still serve the same Vercel website on your phone. It requires that computer to remain on. [Cloudflare Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/) offer temporary testing URLs without a purchased domain; URLs change on restart and have no uptime guarantee. Use a production backend access key before exposing a backend this way. Third-party proxies require separate setup and are not enabled by this application.
+
+### Optional YouTube session on Render
+
+When the runtime report is healthy but YouTube asks for bot verification, an exported session is another supported attempt. It is optional and cannot guarantee access from a hosting IP. Cookies are login credentials: keep the file out of Git, chat and frontend settings. Using an account with yt-dlp can lead to restrictions or a ban; use a separate account you are willing to risk, as explained in [yt-dlp's cookie guidance](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies).
+
+1. Deploy the latest backend commit.
+2. Export **only youtube.com cookies**, in **Mozilla/Netscape cookies.txt format**. Follow the upstream guidance: use one private/incognito YouTube session, sign in, open `https://www.youtube.com/robots.txt` in the same tab, export, then close that private session. The upstream FAQ links conforming browser extensions. Avoid the CLI export of an entire browser profile: it includes cookies from other sites.
+3. In Render **Environment → Secret Files → Add Secret File**, name the file `youtube-cookies.txt` and paste the exported file's contents. Render mounts it at `/etc/secrets/youtube-cookies.txt` at runtime.
+4. Add the environment variable `GRABIT_YOUTUBE_COOKIES_FILE=/etc/secrets/youtube-cookies.txt`. Remove the temporary `GRABIT_DIAGNOSTIC_YOUTUBE_URL` variable, then save and deploy.
+5. Retry the public video on the Vercel website. No Vercel environment changes or frontend connection settings are needed. If the session expires, replace the Render secret file and redeploy. Remove the environment variable and redeploy to disable cookies.
+
+The backend filters out non-YouTube cookies and creates a private writable copy because yt-dlp can update session cookies while Render's mounted secret may be read-only. That copy is reused during the process lifetime and refreshed from the secret on a backend restart. Cookies are passed only to YouTube extraction and download subprocesses; their values are never returned by the API or printed in diagnostics. Cookie-backed requests force backend preparation instead of exposing source URLs to the browser. Only videos explicitly marked public or unlisted and without an age restriction of 18+ are accepted; unknown availability, private and members-only videos are rejected. The downloader rechecks that policy in case availability changed after lookup. Existing backend limits still apply, and visitors to your shared hosted site use this same session.
+
+The diagnostic reports only whether a cookie path is configured. If a configured secret is absent in the build environment, the optional YouTube probe is marked `skipped`; test it after the runtime deployment instead. Secret files do not require an interactive Render shell.
 
 ## Checks
 
