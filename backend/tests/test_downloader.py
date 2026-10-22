@@ -90,3 +90,25 @@ async def test_unsupported_media_is_rejected_before_download(settings, info):
     engine = YtDlpDownloader(settings, JsonRunner(info))
     with pytest.raises(MediaError):
         await engine.inspect("https://youtu.be/test", "YouTube", "a" * 32)
+
+
+async def test_instagram_formats_are_not_rejected_when_duration_is_missing(settings):
+    info = {
+        "duration": None,
+        "formats": [
+            {
+                "format_id": "video",
+                "width": 720,
+                "height": 1280,
+                "vcodec": "avc1",
+                "acodec": "aac",
+                "ext": "mp4",
+            },
+        ],
+    }
+    media = await YtDlpDownloader(settings, JsonRunner(info)).inspect(
+        "https://www.instagram.com/reel/test/", "Instagram", "a" * 32
+    )
+    assert media.duration is None
+    assert media.formats[0].label == "720p"
+    assert media.formats[0].height == 1280

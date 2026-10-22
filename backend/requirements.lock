@@ -6,6 +6,7 @@ annotated-types==0.8.0
     # via pydantic
 anyio==4.15.1
     # via
+    #   httpx
     #   starlette
     #   watchfiles
 brotli==1.2.0 ; implementation_name == 'cpython' and sys_platform != 'ios'
@@ -14,31 +15,45 @@ brotlicffi==1.2.0.2 ; implementation_name != 'cpython'
     # via yt-dlp
 certifi==2026.10.19
     # via
+    #   curl-cffi
+    #   httpcore
+    #   httpx
     #   requests
     #   yt-dlp
-cffi==2.1.1 ; implementation_name != 'cpython'
-    # via brotlicffi
+cffi==2.1.1
+    # via
+    #   brotlicffi
+    #   curl-cffi
 charset-normalizer==3.5.2
     # via requests
 click==8.5.0
     # via uvicorn
+curl-cffi==0.16.3 ; implementation_name == 'cpython'
+    # via yt-dlp
 exceptiongroup==1.3.1 ; python_full_version < '3.11'
     # via anyio
 fastapi==0.156.8
     # via grabit-backend (backend/pyproject.toml)
 h11==0.16.0
-    # via uvicorn
+    # via
+    #   httpcore
+    #   uvicorn
+httpcore==1.0.9
+    # via httpx
 httptools==0.9.0
     # via uvicorn
+httpx==0.28.1
+    # via grabit-backend (backend/pyproject.toml)
 idna==3.20
     # via
     #   anyio
+    #   httpx
     #   requests
 mutagen==1.48.1
     # via yt-dlp
 opentelemetry-api==1.45.1
     # via fastapi
-pycparser==3.11 ; implementation_name != 'PyPy' and implementation_name != 'cpython'
+pycparser==3.11 ; implementation_name != 'PyPy'
     # via cffi
 pycryptodomex==3.24.1
     # via yt-dlp
@@ -76,6 +91,7 @@ typing-extensions==4.16.0
     #   starlette
     #   typing-inspection
     #   uvicorn
+    #   yt-dlp
 typing-inspection==0.4.4
     # via
     #   fastapi
@@ -99,7 +115,7 @@ websockets==17.3 ; python_full_version >= '3.11'
     # via
     #   uvicorn
     #   yt-dlp
-yt-dlp==2026.8.19
+yt-dlp==2026.10.21
     # via grabit-backend (backend/pyproject.toml)
 yt-dlp-ejs==0.8.0
     # via yt-dlp

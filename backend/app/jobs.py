@@ -62,6 +62,7 @@ class JobService:
         cached = self.media.get(request.media_id)
         if (
             self.settings.max_duration_seconds
+            and cached.info.duration is not None
             and cached.info.duration > self.settings.max_duration_seconds
         ):
             raise MediaError(

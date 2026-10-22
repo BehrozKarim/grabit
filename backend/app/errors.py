@@ -9,6 +9,13 @@ class MediaError(Exception):
 
 def friendly_error(output: str) -> str:
     text = output.lower()
+    if "ip address is blocked" in text or "ip blocked" in text:
+        return (
+            "The platform blocked this backend's IP address. "
+            "Try your own backend on another network."
+        )
+    if "no suitable extractor" in text or "unsupported url" in text:
+        return "This share URL is not recognized. Open the video and copy its original video link."
     if any(word in text for word in ("sign in", "login", "log in", "cookies", "private")):
         return "This video requires sign-in or was blocked by the platform. Try a public video."
     if any(word in text for word in ("429", "403", "bot", "captcha", "po token")):

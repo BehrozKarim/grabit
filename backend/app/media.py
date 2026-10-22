@@ -38,7 +38,7 @@ class MediaService:
         async with self.gate:
             media_id = uuid.uuid4().hex
             info = await self.inspector.inspect(url, platform, media_id)
-        self.cache[media_id] = CachedMedia(url, info, time.monotonic())
+        self.cache[media_id] = CachedMedia(info._source_url or url, info, time.monotonic())
         while len(self.cache) > 100:
             self.cache.popitem(last=False)
         return info

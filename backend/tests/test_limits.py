@@ -111,3 +111,31 @@ async def test_local_backend_accepts_long_recorded_videos():
 
 def test_size_limit_can_exceed_previous_500_mib_ceiling():
     assert Settings(_env_file=None, env="development", max_file_mb=5000).max_file_mb == 5000
+
+
+@pytest.mark.parametrize("actual_duration", [12, 9999])
+async def test_unknown_metadata_duration_is_checked_on_the_finished_hosted_file(
+    settings, tmp_path, actual_duration
+):
+    class ProbeRunner(FileRunner):
+        async def run(self, args, *, timeout, on_line=None):
+            if args[0] == "ffprobe":
+                return json.dumps({"format": {"duration": str(actual_duration)}})
+            return await super().run(args, timeout=timeout, on_line=on_line)
+
+    media = media_info()
+    media.duration = None
+    runner = ProbeRunner(1024)
+    download = YtDlpDownloader(settings, runner).download(
+        "https://www.instagram.com/reel/test/",
+        media,
+        CreateJobRequest(media_id=media.id, format_id="720"),
+        tmp_path,
+        lambda *_: None,
+    )
+    if actual_duration > settings.max_duration_seconds:
+        with pytest.raises(MediaError, match="duration limit"):
+            await download
+    else:
+        assert (await download).stat().st_size == 1024
+    assert "duration <=? 1200" in runner.args[runner.args.index("--match-filters") + 1]

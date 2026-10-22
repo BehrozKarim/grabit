@@ -7,7 +7,8 @@ dependencies = [
     "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.34,<1",
     "pydantic-settings>=2.7,<3",
-    "yt-dlp[default]>=2025.10.22",
+    "yt-dlp[default,curl-cffi]>=2026.10.21",
+    "httpx>=0.28,<1",
 ]
 
 [project.optional-dependencies]

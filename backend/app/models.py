@@ -12,6 +12,7 @@ class FormatOption(BaseModel):
     label: str
     extension: str
     height: int | None = None
+    width: int | None = None
     filesize: int | None = None
     has_audio: bool = False
 
@@ -19,12 +20,13 @@ class FormatOption(BaseModel):
 class MediaInfo(BaseModel):
     # Extractor details stay in the expiring cache, never in the metadata response.
     _browser_formats: list[dict] = PrivateAttr(default_factory=list)
+    _source_url: str | None = PrivateAttr(default=None)
     id: str
     title: str
     platform: str
     uploader: str | None
     thumbnail: str | None
-    duration: float
+    duration: float | None
     formats: list[FormatOption]
     audio_available: bool
 

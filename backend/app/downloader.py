@@ -6,6 +6,7 @@ from pathlib import Path
 from app.browser import browser_formats
 from app.config import Settings
 from app.errors import MediaError
+from app.links import resolve_share_url
 from app.models import CreateJobRequest, FormatOption, MediaInfo
 from app.process import ProcessRunner
 from app.values import positive_number
@@ -16,6 +17,8 @@ def format_options(info: dict) -> list[FormatOption]:
     choices: dict[int, tuple[tuple, FormatOption]] = {}
     for item in info.get("formats") or [info]:
         height = positive_number(item.get("height"))
+        width = positive_number(item.get("width"))
+        quality = int(min(height, width)) if height and width else int(height or 0)
         video_codec = item.get("vcodec") or "none"
         if not height or video_codec == "none" or item.get("has_drm"):
             continue
@@ -29,8 +32,9 @@ def format_options(info: dict) -> list[FormatOption]:
         size = positive_number(item.get("filesize")) or positive_number(item.get("filesize_approx"))
         option = FormatOption(
             id=format_id,
-            label=f"{int(height)}p",
+            label=f"{quality}p",
             height=int(height),
+            width=int(width) if width else None,
             extension=ext,
             filesize=int(size) if size else None,
             has_audio=item.get("acodec") not in (None, "none"),
@@ -40,8 +44,8 @@ def format_options(info: dict) -> list[FormatOption]:
             ext == "mp4",
             positive_number(item.get("tbr")) or 0,
         )
-        if int(height) not in choices or rank > choices[int(height)][0]:
-            choices[int(height)] = (rank, option)
+        if quality not in choices or rank > choices[quality][0]:
+            choices[quality] = (rank, option)
     return [choices[height][1] for height in sorted(choices, reverse=True)]
 
 
@@ -73,6 +77,7 @@ class YtDlpDownloader:
         ]
 
     async def inspect(self, url: str, platform: str, media_id: str) -> MediaInfo:
+        url = await resolve_share_url(url)
         raw = await self.runner.run(
             self.base_args() + ["--dump-single-json", "--skip-download", "--", url],
             timeout=90,
@@ -86,8 +91,6 @@ class YtDlpDownloader:
             raise MediaError("Live and upcoming streams are not supported. Try a recorded video.")
         if info.get("_type") in ("playlist", "multi_video"):
             raise MediaError("Use a link to one video rather than a playlist or multi-video post.")
-        if not duration:
-            raise MediaError("The video length could not be verified. Try a different video.")
         formats = format_options(info)
         audio_available = any(
             f.get("acodec") not in (None, "none") and not f.get("has_drm")
@@ -109,6 +112,7 @@ class YtDlpDownloader:
             audio_available=audio_available,
         )
         media._browser_formats = browser_formats(info)
+        media._source_url = url
         return media
 
     async def download(
@@ -140,7 +144,8 @@ class YtDlpDownloader:
             args += ["--max-filesize", f"{self.settings.max_file_mb}M"]
         match_filter = "!is_live"
         if self.settings.max_duration_seconds:
-            match_filter += f" & duration <= {self.settings.max_duration_seconds}"
+            # Missing extractor metadata is common for public Instagram reels.
+            match_filter += f" & duration <=? {self.settings.max_duration_seconds}"
         args += ["--match-filters", match_filter]
         if request.mode == "audio":
             args += [
@@ -195,4 +200,26 @@ class YtDlpDownloader:
             raise MediaError("The finished file exceeds the size limit. Choose a lower resolution.")
         if result.stat().st_size == 0:
             raise MediaError("The platform returned an empty file. Try another video.")
+        if media.duration is None and self.settings.max_duration_seconds:
+            probe = await self.runner.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "json",
+                    str(result),
+                ],
+                timeout=15,
+            )
+            try:
+                actual_duration = positive_number(float(json.loads(probe)["format"]["duration"]))
+            except (ValueError, TypeError, KeyError) as error:
+                raise MediaError(
+                    "The prepared file could not be read. Try another format."
+                ) from error
+            if actual_duration and actual_duration > self.settings.max_duration_seconds:
+                raise MediaError("The finished video exceeds this server's duration limit.")
         return result
