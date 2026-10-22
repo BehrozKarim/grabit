@@ -9,18 +9,23 @@ export function useDeviceDownload(api: GrabitApi) {
   const [fallback, setFallback] = useState<JobRequest | null>(null)
   const controller = useRef<AbortController | null>(null)
   const objectUrl = useRef<string | null>(null)
+  const dispose = useRef<(() => Promise<void>) | undefined>(undefined)
 
   function release() {
     controller.current?.abort()
     controller.current = null
     if (objectUrl.current) URL.revokeObjectURL(objectUrl.current)
     objectUrl.current = null
+    void dispose.current?.()
+    dispose.current = undefined
   }
 
   useEffect(() => () => {
     controller.current?.abort()
     controller.current = null
     if (objectUrl.current) URL.revokeObjectURL(objectUrl.current)
+    void dispose.current?.()
+    dispose.current = undefined
   }, [api])
 
   function reset() { release(); setDevice(null); setFallback(null) }
@@ -39,9 +44,11 @@ export function useDeviceDownload(api: GrabitApi) {
       })
       if (action.signal.aborted) {
         if (result.url?.startsWith('blob:')) URL.revokeObjectURL(result.url)
+        await result.dispose?.()
         return
       }
       if (!result.direct) objectUrl.current = result.url || null
+      dispose.current = result.dispose
       setDevice(result)
     } catch (error) {
       if (action.signal.aborted) return

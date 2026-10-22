@@ -1,4 +1,5 @@
-export function duration(seconds: number): string {
+export function duration(seconds: number | null): string {
+  if (seconds === null) return 'Length unavailable'
   const minutes = Math.floor(seconds / 60)
   return `${minutes}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`
 }

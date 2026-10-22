@@ -9,6 +9,7 @@ export interface FormatOption {
   label: string
   extension: string
   height: number | null
+  width?: number | null
   filesize: number | null
   has_audio: boolean
 }
@@ -19,7 +20,7 @@ export interface MediaInfo {
   platform: string
   uploader: string | null
   thumbnail: string | null
-  duration: number
+  duration: number | null
   formats: FormatOption[]
   audio_available: boolean
 }

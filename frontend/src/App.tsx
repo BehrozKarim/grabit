@@ -11,6 +11,7 @@ import { MediaResult } from './components/MediaResult'
 import { DownloadStatus } from './components/DownloadStatus'
 import { DeviceStatus } from './components/DeviceStatus'
 import { useDeviceDownload } from './hooks/useDeviceDownload'
+import { serverLimitMessage } from './lib/limits'
 import type { Connection, ServerConfig } from './types'
 
 function Downloader({ connection, onSettings }: { connection: Connection; onSettings: () => void }) {
@@ -25,12 +26,8 @@ function Downloader({ connection, onSettings }: { connection: Connection; onSett
   const input = useRef<HTMLInputElement>(null)
   const results = useRef<HTMLDivElement>(null)
   const active = !!job && ['queued', 'downloading', 'processing'].includes(job.status)
-  const fallbackOption = media?.formats.find(f => f.id === device.fallback?.format_id)
   const fallbackBlocked = config && media && device.fallback ?
-    config.max_duration_seconds > 0 && media.duration > config.max_duration_seconds ?
-      'This video is too long for this server. Connect your own backend in Settings to prepare it there.' :
-      device.fallback.mode === 'video' && config.max_file_mb > 0 && (fallbackOption?.filesize || 0) > config.max_file_mb * 1024 * 1024 ?
-        'This source exceeds the server’s file-size limit. Try a lower resolution or your own backend.' : null : null
+    serverLimitMessage(media, device.fallback, config) : null
 
   useEffect(() => {
     const controller = new AbortController()
@@ -85,7 +82,10 @@ function Downloader({ connection, onSettings }: { connection: Connection; onSett
         {(error.includes('key') || error.includes('Settings')) && <button className="text-button" type="button" onClick={onSettings}>Open Settings <ArrowRightIcon size={16} /></button>}
       </div></div>}
       <div ref={results}>
-        {media && !active && job?.status !== 'ready' && <MediaResult key={media.id} media={media} busy={busy} onDownload={request => void device.download(media, request)} />}
+        {media && !active && job?.status !== 'ready' && <MediaResult key={media.id} media={media} busy={busy} config={config}
+          onDownload={request => void device.download(media, request)} onServer={request => {
+            if (!serverLimitMessage(media, request, config)) { device.reset(); void createJob(request) }
+          }} />}
         {device.device && !active && job?.status !== 'ready' && <DeviceStatus device={device.device} config={config} busy={busy} fallbackBlocked={fallbackBlocked}
           onCancel={device.cancel} onFallback={() => { if (device.fallback && !fallbackBlocked) { void createJob(device.fallback); device.reset() } }} />}
         {job && <DownloadStatus job={job} busy={busy} onCancel={() => void cancel()} onSave={() => void save()} />}

@@ -16,7 +16,7 @@ export function DeviceStatus({ device, config, fallbackBlocked, busy, onCancel, 
     {device.status === 'working' && <>
       <progress max={100} value={device.progress ?? undefined} aria-label="Device preparation progress" />
       <button className="text-button" type="button" onClick={onCancel}>Cancel device preparation</button>
-      <p className="field-hint">Keep this page open. Merging and conversion use your device’s memory and battery.</p>
+      <p className="field-hint">Sources download to temporary device storage. FFmpeg still uses RAM while merging or converting. Keep this page open.</p>
     </>}
     {device.status === 'ready' && device.url && <>
       <a className="button primary" href={device.url} download={device.filename}

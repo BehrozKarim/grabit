@@ -184,3 +184,5 @@ progress::-moz-progress-bar { background: var(--primary); }
 .device-status .button { display: inline-flex; text-decoration: none; margin-block: 4px 10px; }
 .device-status progress { display: block; width: 100%; height: 10px; accent-color: #4d6953; margin: 16px 0; }
 .device-status .text-button { margin-bottom: 12px; }
+.server-alternative { margin-top: 16px; }
+.server-alternative .button { margin-bottom: 8px; }

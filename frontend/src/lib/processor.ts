@@ -1,4 +1,4 @@
-import { FFmpeg } from '@ffmpeg/ffmpeg'
+import { FFmpeg, FFFSType } from '@ffmpeg/ffmpeg'
 import coreURL from '@ffmpeg/core?url'
 import wasmURL from '@ffmpeg/core/wasm?url'
 
@@ -6,5 +6,11 @@ import wasmURL from '@ffmpeg/core/wasm?url'
 // Vite emits versioned same-origin assets; no runtime CDN dependency.
 export function createProcessor() {
   const ffmpeg = new FFmpeg()
-  return Object.assign(ffmpeg, { loadEngine: () => ffmpeg.load({ coreURL, wasmURL }) })
+  return Object.assign(ffmpeg, {
+    loadEngine: () => ffmpeg.load({ coreURL, wasmURL }),
+    async mountInputs(files: File[]) {
+      await ffmpeg.createDir('/inputs')
+      await ffmpeg.mount(FFFSType.WORKERFS, { files }, '/inputs')
+    },
+  })
 }

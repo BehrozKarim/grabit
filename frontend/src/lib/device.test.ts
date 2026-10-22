@@ -1,14 +1,16 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { waitFor } from '@testing-library/react'
-import { deviceMemoryBudget, prepareOnDevice, processingArguments, readSource, sourceUrl } from './device'
+import { deviceMemoryBudget, prepareOnDevice, processingArguments, stageSource, sourceUrl } from './device'
 import type { BrowserPlan } from '../types'
 
 const source = { url: 'https://rr1.googlevideo.com/video', extension: 'mp4', filesize: null }
 const direct: BrowserPlan = { route: 'direct', sources: [source], extension: 'mp4', reason: null }
 const processor = vi.hoisted(() => ({
-  loadEngine: vi.fn(), writeFile: vi.fn(), exec: vi.fn(), readFile: vi.fn(), on: vi.fn(), terminate: vi.fn(),
+  loadEngine: vi.fn(), mountInputs: vi.fn(), unmount: vi.fn(), exec: vi.fn(), readFile: vi.fn(), on: vi.fn(), terminate: vi.fn(),
 }))
+const workspace = vi.hoisted(() => ({ stage: vi.fn(), output: vi.fn(), remove: vi.fn(), dispose: vi.fn() }))
 vi.mock('./processor', () => ({ createProcessor: () => processor }))
+vi.mock('./storage', () => ({ createWorkspace: async () => workspace }))
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.resetAllMocks() })
 
 it('checks a direct source without buffering a large file or imposing server limits', async () => {
@@ -29,9 +31,10 @@ it.each(['https://localhost/file', 'https://googlevideo.com.evil.test/file',
   expect(() => sourceUrl(value)).toThrow()
 })
 
-it('stops unknown-size streams at the memory budget', async () => {
-  vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new Uint8Array(12)))
-  await expect(readSource(source, 10, new AbortController().signal, vi.fn())).rejects.toThrow('memory budget')
+it('rejects known oversized sources before writing to storage', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new Uint8Array(12), { headers: { 'Content-Length': '12' } }))
+  await expect(stageSource(source, workspace, 'input.mp4', 10, new AbortController().signal, vi.fn())).rejects.toThrow('processing budget')
+  expect(workspace.stage).not.toHaveBeenCalled()
   expect(deviceMemoryBudget()).toBeLessThanOrEqual(1024 ** 3)
 })
 
@@ -64,14 +67,20 @@ it('fetches both tracks directly, merges on the device and releases the worker',
   processor.loadEngine.mockResolvedValue(true)
   processor.exec.mockResolvedValue(0)
   processor.readFile.mockResolvedValue(new Uint8Array([4, 5, 6]))
+  workspace.stage.mockResolvedValueOnce(new File([new Uint8Array([1, 2])], 'input0.mp4'))
+    .mockResolvedValueOnce(new File([new Uint8Array([3])], 'input1.m4a'))
+  workspace.output.mockResolvedValue(new File([new Uint8Array([4, 5, 6])], 'A video.mp4', { type: 'video/mp4' }))
   const result = await prepareOnDevice({ ...direct, route: 'merge', sources: [source,
     { ...source, url: 'https://rr1.googlevideo.com/audio', extension: 'm4a' }] },
   'A video', 12, new AbortController().signal, vi.fn())
   expect(result).toMatchObject({ status: 'ready', direct: false, url: 'blob:device-result' })
-  expect(processor.writeFile).toHaveBeenCalledWith('input0.mp4', new Uint8Array([1, 2]))
-  expect(processor.writeFile).toHaveBeenCalledWith('input1.m4a', new Uint8Array([3]))
+  expect(processor.mountInputs.mock.calls[0][0].map((file: File) => file.name)).toEqual(['input0.mp4', 'input1.m4a'])
+  expect(workspace.remove).toHaveBeenCalledWith('input0.mp4')
   expect(createUrl.mock.calls[0][0]).toMatchObject({ size: 3, type: 'video/mp4' })
   expect(processor.terminate).toHaveBeenCalled()
+  expect(workspace.dispose).not.toHaveBeenCalled()
+  await result.dispose?.()
+  expect(workspace.dispose).toHaveBeenCalled()
 })
 
 it('terminates a loading worker when the user cancels', async () => {
@@ -87,4 +96,5 @@ it('terminates a loading worker when the user cancels', async () => {
   controller.abort()
   await rejected
   expect(processor.terminate).toHaveBeenCalled()
+  expect(workspace.dispose).toHaveBeenCalled()
 })

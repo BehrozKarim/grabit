@@ -29,3 +29,10 @@ it('disables unavailable audio instead of offering a non-working format', () => 
   render(<MediaResult media={{ ...media, audio_available: false }} busy={false} onDownload={vi.fn()} />)
   expect(screen.getByRole('button', { name: 'Audio only' })).toBeDisabled()
 })
+
+it('shows quality without promising the video source container is the output container', () => {
+  render(<MediaResult media={{ ...media, duration: null }} busy={false} onDownload={vi.fn()} />)
+  expect(screen.getByRole('option', { name: '1080p' })).toBeInTheDocument()
+  expect(screen.queryByRole('option', { name: /MP4/ })).not.toBeInTheDocument()
+  expect(screen.getByText('Length unavailable')).toBeInTheDocument()
+})

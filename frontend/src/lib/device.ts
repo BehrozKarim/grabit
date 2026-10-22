@@ -1,4 +1,8 @@
 import type { BrowserPlan, BrowserSource, DeviceDownload } from '../types'
+import { createWorkspace } from './storage'
+import type { DeviceWorkspace } from './storage'
+
+export interface PreparedDownload extends DeviceDownload { dispose?: () => Promise<void> }
 
 const extensions = ['mp4', 'webm', 'mov', 'mkv', 'm4a', 'mp3']
 const domains = ['googlevideo.com', 'fbcdn.net', 'cdninstagram.com', 'twimg.com', 'tiktokcdn.com',
@@ -33,33 +37,21 @@ async function sourceResponse(source: BrowserSource, signal: AbortSignal, probe 
   return response
 }
 
-export async function readSource(source: BrowserSource, remaining: number, signal: AbortSignal,
-  progress: (bytes: number) => void): Promise<Uint8Array> {
+export async function stageSource(source: BrowserSource, workspace: DeviceWorkspace, name: string,
+  remaining: number, signal: AbortSignal, progress: (bytes: number) => void): Promise<File> {
   const response = await sourceResponse(source, signal)
   const length = Number(response.headers.get('Content-Length'))
   if ((length > remaining) || (source.filesize || 0) > remaining) {
     await response.body?.cancel()
-    throw new Error('This file is too large for the browser processing memory budget. Try a lower resolution.')
+    throw new Error('This file is too large for the device processing budget. Try a lower resolution or server preparation.')
   }
   if (!response.body) throw new Error('This browser could not read the source stream.')
-  const reader = response.body.getReader()
-  const chunks: Uint8Array[] = []
-  let size = 0
   try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      size += value.byteLength
-      if (size > remaining) throw new Error('This file exceeds the browser processing memory budget. Try a lower resolution.')
-      chunks.push(value)
-      progress(size)
-    }
-  } finally { await reader.cancel().catch(() => {}); reader.releaseLock() }
-  if (!size) throw new Error('The platform returned an empty source file.')
-  const data = new Uint8Array(size)
-  let offset = 0
-  for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.length }
-  return data
+    return await workspace.stage(name, response.body, remaining, signal, progress)
+  } catch (error) {
+    await response.body.cancel().catch(() => {})
+    throw error
+  }
 }
 
 export function processingArguments(route: 'merge' | 'convert', inputs: string[], extension: string): string[] {
@@ -69,8 +61,8 @@ export function processingArguments(route: 'merge' | 'convert', inputs: string[]
   return [...args, '-y', `output.${extension}`]
 }
 
-export async function prepareOnDevice(plan: BrowserPlan, title: string, duration: number,
-  signal: AbortSignal, update: (state: DeviceDownload) => void): Promise<DeviceDownload> {
+export async function prepareOnDevice(plan: BrowserPlan, title: string, duration: number | null,
+  signal: AbortSignal, update: (state: DeviceDownload) => void): Promise<PreparedDownload> {
   signal.throwIfAborted()
   if (plan.route === 'server') throw new Error(plan.reason || 'This format needs server processing.')
   if (!plan.extension || !extensions.includes(plan.extension) ||
@@ -99,6 +91,8 @@ export async function prepareOnDevice(plan: BrowserPlan, title: string, duration
   const { createProcessor } = await import('./processor')
   signal.throwIfAborted()
   const ffmpeg = createProcessor()
+  let workspace: DeviceWorkspace | undefined
+  let completed = false
   const stop = () => ffmpeg.terminate()
   signal.addEventListener('abort', stop, { once: true })
   const engineAbort = new AbortController()
@@ -106,34 +100,39 @@ export async function prepareOnDevice(plan: BrowserPlan, title: string, duration
   let timedOut = false
   const timeout = setTimeout(() => { timedOut = true; engineAbort.abort(); stop() }, 10 * 60 * 1000)
   try {
+    workspace = await createWorkspace()
     let loadTimeout: ReturnType<typeof setTimeout> | undefined
     try {
       await Promise.race([ffmpeg.loadEngine(), new Promise<never>((_, reject) => {
         loadTimeout = setTimeout(() => reject(new Error('The browser media engine could not start. Try again or use server fallback.')), 60_000)
       })])
     } finally { clearTimeout(loadTimeout) }
-    const inputs = []
+    const files: File[] = []
     for (const [index, source] of plan.sources.entries()) {
-      const data = await readSource(source, remaining, engineSignal, bytes => working(
-        `Downloading source ${index + 1} of ${plan.sources.length} to this device…`,
+      const file = await stageSource(source, workspace, `input${index}.${source.extension}`, remaining, engineSignal, bytes => working(
+        `Downloading source ${index + 1} of ${plan.sources.length} to temporary device storage…`,
         source.filesize ? Math.min(100, bytes / source.filesize * 100) : null,
       ))
-      remaining -= data.byteLength
-      const input = `input${index}.${source.extension}`
-      await ffmpeg.writeFile(input, data)
-      inputs.push(input)
+      remaining -= file.size
+      files.push(file)
     }
+    await ffmpeg.mountInputs(files)
     working(plan.route === 'merge' ? 'Combining video and audio on this device…' : 'Converting audio on this device…')
     ffmpeg.on('progress', ({ time }) => working('Processing on this device…', duration ? Math.min(99, time / 1_000_000 / duration * 100) : null))
-    const exitCode = await ffmpeg.exec(processingArguments(plan.route, inputs, plan.extension))
+    const exitCode = await ffmpeg.exec(processingArguments(plan.route, files.map(f => `/inputs/${f.name}`), plan.extension))
     if (exitCode !== 0) throw new Error('The browser media engine could not process this format.')
     const data = await ffmpeg.readFile(`output.${plan.extension}`)
     if (typeof data === 'string' || !data.byteLength) throw new Error('Device processing produced an empty file.')
     signal.throwIfAborted()
-    const mime = { mp3: 'audio/mpeg', m4a: 'audio/mp4', mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', mkv: 'video/x-matroska' }[plan.extension]
-    const blob = new Blob([new Uint8Array(data)], { type: mime })
-    return { status: 'ready', message: 'Prepared on your device. Save the file before closing this page.',
-      progress: 100, url: URL.createObjectURL(blob), filename, direct: false }
+    // FFmpeg still builds the output in WASM memory. Move it to OPFS without another full Blob copy.
+    const output = await workspace.output(filename, data)
+    await ffmpeg.unmount('/inputs')
+    await Promise.all(files.map(file => workspace!.remove(file.name)))
+    signal.throwIfAborted()
+    const url = URL.createObjectURL(output)
+    completed = true
+    return { status: 'ready', message: 'Prepared using temporary device storage. Save the file before closing this page.',
+      progress: 100, url, filename, direct: false, dispose: workspace.dispose }
   } catch (error) {
     if (timedOut) throw new Error('Device preparation exceeded ten minutes. Try a smaller file or server fallback.', { cause: error })
     throw error
@@ -141,5 +140,6 @@ export async function prepareOnDevice(plan: BrowserPlan, title: string, duration
     clearTimeout(timeout)
     signal.removeEventListener('abort', stop)
     ffmpeg.terminate()
+    if (!completed) await workspace?.dispose()
   }
 }
