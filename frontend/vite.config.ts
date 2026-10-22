@@ -40,5 +40,4 @@ function localHostedApi(environment: Record<string, string>): Plugin {
 export default defineConfig(({ mode }) => ({
   plugins: [react(), localHostedApi({ ...process.env, ...loadEnv(mode, process.cwd(), '') } as Record<string, string>)],
   server: { port: 5173, strictPort: true },
-  optimizeDeps: { exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/core'] },
 }))

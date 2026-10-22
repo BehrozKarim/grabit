@@ -91,8 +91,8 @@ export class GrabitApi {
     return this.request<Job>(`/api/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' })
   }
 
-  async downloadUrl(id: string) {
-    const ticket = await this.request<{ url: string }>(`/api/jobs/${encodeURIComponent(id)}/ticket`, { method: 'POST' })
+  async downloadUrl(id: string, signal?: AbortSignal) {
+    const ticket = await this.request<{ url: string }>(`/api/jobs/${encodeURIComponent(id)}/ticket`, { method: 'POST', signal })
     const url = this.connection.mode === 'hosted' ? new URL(ticket.url) : new URL(ticket.url, this.connection.url)
     const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
     if ((url.protocol !== 'https:' && !(loopback && url.protocol === 'http:')) || url.username || url.password ||

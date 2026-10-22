@@ -66,12 +66,3 @@ export interface BrowserPlan {
   extension: string | null
   reason: string | null
 }
-
-export interface DeviceDownload {
-  status: 'working' | 'ready' | 'fallback' | 'cancelled'
-  message: string
-  progress: number | null
-  url?: string
-  filename?: string
-  direct?: boolean
-}

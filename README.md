@@ -2,17 +2,16 @@
 
 A video and audio downloader with a React frontend on Vercel and a separate Python API on Render or your own computer. A small server-only Vercel function connects the default hosted mode without exposing the Render access key.
 
-Paste a public video link, choose an available resolution or MP3/M4A audio, and prepare it on your device when the platform permits browser access. Server processing is an explicit fallback.
+Paste a public video link, choose an available resolution or MP3/M4A audio, and press **Download**. Grabit handles the route automatically and hands the finished file to your browser’s download manager.
 
 ## First working version
 
 - Mobile-first React and TypeScript interface.
 - Real format discovery and downloads using yt-dlp.
-- Direct source links for complete video/audio files, without buffering the file in Grabit.
-- Browser-side stream merging and MP3/M4A conversion through a lazily loaded, single-thread FFmpeg WebAssembly worker.
-- Explicit server preparation, available before attempting device processing and as a fallback when browser access fails.
-- Storage-backed browser source downloads using OPFS, with FFmpeg reading files through WORKERFS.
-- Queued downloads, track progress, cancellation, and recovery after a page refresh in the same tab.
+- One Download button with automatic direct-file detection and backend preparation when needed.
+- Native browser downloads without collecting whole media files in frontend JavaScript.
+- Native FFmpeg on the backend for stream merging and MP3/M4A conversion.
+- Queued preparation, progress, cancellation, and recovery after a page refresh in the same tab.
 - Hosted mode works immediately, with connection details supplied by the deployment owner.
 - Optional local/self-hosted mode connects directly to your own backend.
 - Server-only hosted credentials, exact-origin CORS, and short-lived file links.
@@ -21,7 +20,7 @@ Paste a public video link, choose an available resolution or MP3/M4A audio, and 
 
 The backend accepts YouTube, Facebook, Instagram, TikTok, and X/Twitter links. These are extractor integrations, not a guarantee that every video on each platform works. Private posts, authentication-required content, DRM, live streams, playlists, and multi-video posts are outside this version's scope. Platform changes, region restrictions, or blocked hosting IPs can prevent downloads.
 
-Live checks on 2026-10-22: the supplied Instagram reel `Dex3HbbRidi` returned no duration but downloaded through the backend as 720p H.264/AAC MP4 (63,426,311 bytes). The same reel also passed the full browser flow: OPFS source downloads, on-device stream merging and saving the finished MP4. Both supplied Facebook share links resolved to video `1119567540782702`; its selected 720p VP9/AAC streams downloaded as MKV (82,159,546 bytes). Outputs were checked with ffprobe. The upstream TikTok fixture `6748451240264420610` returned an explicit IP-block error even with yt-dlp's official request compatibility dependency installed; TikTok downloads are not verified as working from this network. A real YouTube video and MP3 conversion passed earlier. The actual browser engine also passed OPFS source staging, WORKERFS reads, MP3 conversion and video/audio merging using synthetic fixtures. Actual mobile devices, X and the Render deployment still need live verification. Automated API tests use deterministic fixtures rather than third-party websites.
+Live checks on 2026-10-22: the supplied Instagram reel `Dex3HbbRidi` returned no duration but downloaded through the backend as 720p H.264/AAC MP4 (63,426,311 bytes). The browser also completed a fresh 360p job after one Download click, automatically receiving the attachment without a second save action (16,261,343 bytes); retrying the ready 720p file reused its job. Both supplied Facebook share links resolved to video `1119567540782702`; its selected 720p VP9/AAC streams downloaded as MKV (82,159,546 bytes). Outputs were checked with ffprobe. The upstream TikTok fixture `6748451240264420610` returned an explicit IP-block error even with yt-dlp’s official request compatibility dependency installed; TikTok downloads are not verified as working from this network. A real YouTube video and MP3 conversion also passed. Actual mobile devices, X and the Render deployment still need live verification. Automated API tests use deterministic fixtures rather than third-party websites.
 
 ## Project structure
 
@@ -43,24 +42,24 @@ render.yaml                 Free Render web-service blueprint
 .github/workflows/ci.yml    Independent frontend and backend checks
 ```
 
-Service responsibilities are separated, with small inspector/downloader protocols for dependency injection. HTTP routes do not contain extraction logic, and React components do not construct network requests. Browser code lives in `frontend/src`; the server-only deployment adapter lives in `frontend/server`. Extraction stays in `backend`; device processing lives in `frontend/src/lib/device.ts` and `processor.ts`. Native FFmpeg handles server fallback. Shared validation and formatting live in one place.
+Service responsibilities are separated, with small inspector/downloader protocols for dependency injection. HTTP routes do not contain extraction logic, and React components do not construct network requests. Browser code lives in `frontend/src`; the server-only deployment adapter lives in `frontend/server`. Extraction and native FFmpeg processing stay in `backend`; `frontend/src/lib/download.ts` handles attachment detection and browser download handoff. Shared validation and formatting live in one place.
 
 ## How downloads are routed
 
-1. The backend resolves metadata and caches minimal source details for ten minutes. `/api/plan` returns only the selected public HTTPS source URLs, without extractor headers, cookies or access keys. The endpoint does not download media or create a server job.
-2. **Complete file:** the browser checks access with a small range request, then shows **Open direct file**. The platform transfers the file directly to the device. Cross-origin sites control the filename and attachment behavior; a browser may open a media player, whose Save/Download action saves the file. Grabit cannot confirm that the browser finished saving it. There is no application size or duration cap on this route.
-3. **Separate tracks or audio conversion:** the browser loads the versioned FFmpeg engine from the frontend's own static assets (about 31 MB uncompressed on first use). Source response streams write chunk by chunk to app-private device storage (OPFS), with backpressure; JavaScript does not collect the full sources in arrays. FFmpeg mounts these files read-only through WORKERFS, merges tracks without video re-encoding or encodes MP3/AAC locally. The finished output is moved into OPFS and **Save file** uses a URL for that file. Browsers without usable temporary storage offer server preparation instead of buffering source downloads in RAM.
-4. **Prefer server processing or browser access fails:** choose **Prepare on server instead** before a device attempt, or **Use server fallback** after a failed attempt. The connected backend's limits apply. Media bytes pass through that backend and its temporary storage, then its attachment URL is handled by the browser's download manager without buffering the file in frontend JavaScript. Server preparation is never started automatically.
+1. The backend resolves metadata and caches minimal source details for ten minutes. `/api/plan` returns the selected public HTTPS source URLs, without extractor headers, cookies or access keys. It does not download media or create a processing job.
+2. Press **Download**. For a complete file, Grabit requests a one-byte range and cancels the response body after checking its headers. If browser access succeeds and the source explicitly serves an attachment, Grabit navigates to that URL. The platform transfers the file directly through the browser’s download manager. This route has no application size or duration cap.
+3. If the source needs merging or conversion, cannot be checked from the browser, or opens inline instead of serving an attachment, Grabit automatically starts a backend job. The connected backend’s limits apply. The backend downloads the sources into temporary disk storage and merges or converts them with native FFmpeg.
+4. When preparation finishes, Grabit automatically obtains a short-lived file URL and starts its attachment download. There is no second Save button. The file transfers from the backend to the browser; media bytes never pass through the Vercel function. Grabit’s frontend does not fetch the file into a Blob, retain its bytes in React state, or load browser FFmpeg.
 
-Browser reads require the platform's CORS permission. Source URLs may expire, depend on the resolver's IP, require unsupported request headers, or use HLS/DASH manifests. Those cases can require fallback even for small videos. Changing Grabit's CORS headers cannot override a platform's policy. This version supports progressive HTTPS sources for device processing; browser-side HLS/DASH fetching is not implemented. A successful lookup is not a guarantee of a device download, and a successful range check cannot guarantee a later full transfer.
+Backend preparation finishes before the browser’s file transfer starts. Preparation progress is shown in Grabit; file-transfer progress and the save location belong to the browser. Browser memory and disk caching are implementation details, but Grabit does not require RAM proportional to the whole output file. Ordinary browser downloads need neither the File System Access API nor a frontend media buffer, including on mobile.
 
-Device processing is **not RAM-free**: FFmpeg uses WASM memory and constructs the output in its memory filesystem before it is written to OPFS. Storage-backed inputs avoid retaining all downloaded source chunks and copying whole input files into WASM memory. The combined source budget remains one eighth of `navigator.deviceMemory` when available, clamped to 128–1024 MiB; browsers that do not report memory use 512 MiB. This leaves room for the output, FFmpeg and the browser, but cannot guarantee a device will not run out of memory. The budget is separate from the hosted 150 MiB limit. Choose server preparation on devices with limited memory. Processing stops after ten minutes; the complete operation stops after fifteen minutes. Cancellation terminates the worker and removes the current workspace. Replacement and unmount release output URLs and files; abandoned app-generated workspaces older than 24 hours are removed on the next processing attempt. Keep the page open and save the file before leaving it.
+A cross-origin `download` attribute alone cannot force a source to save: the source’s `Content-Disposition` response controls attachment behavior. CORS can also prevent the browser from reading that header, so Grabit conservatively uses backend preparation when it cannot verify it. Direct-source URLs may expire or depend on the resolver’s IP; a successful range check cannot guarantee a later full transfer. If a direct transfer fails after handoff, use the browser’s retry controls or fetch the link again.
 
-Missing metadata duration does not block format discovery or device downloads. A bounded backend permits unknown duration during extraction, then probes the finished file with ffprobe to apply its duration policy. Known live streams remain unsupported. Facebook short/share links are resolved with bounded HTTP redirects validated against the supported Facebook hosts before extraction; the generic web extractor remains disabled.
+Keep the page open during preparation so Grabit can start the download when ready. A refreshed page restores the job but waits for **Download** before saving; it does not initiate a download on page load. Browsers may block an automatic download or ask for permission. If nothing starts, press **Download** again to reuse the prepared file while it remains available. Grabit can report that it requested a download, but cannot confirm that the browser completed saving it.
+
+Missing metadata duration does not block format discovery or direct downloads. A bounded backend permits unknown duration during extraction, then probes the finished file with ffprobe to apply its duration policy. Known live streams remain unsupported. Facebook short/share links are resolved with bounded HTTP redirects validated against the supported Facebook hosts before extraction; the generic web extractor remains disabled.
 
 Video choices show resolution only, using the short edge for portrait video. A source container is not a promise about the merged output: depending on the selected video/audio codecs, the result may be MP4, WebM or MKV. Audio choices still explicitly request MP3 or M4A.
-
-The engine uses [`@ffmpeg/ffmpeg` 0.12.15 and `@ffmpeg/core` 0.12.10](https://github.com/ffmpegwasm/ffmpeg.wasm). The wrapper is MIT licensed; the distributed core follows FFmpeg and its included libraries' licenses (the package declares GPL-2.0-or-later). Upstream source, license information and build instructions are available in the [FFmpeg.wasm repository](https://github.com/ffmpegwasm/ffmpeg.wasm).
 
 ## Local development
 
@@ -138,7 +137,7 @@ If creating the service manually instead of using a blueprint, use:
 4. Deploy using `npm run build`, with output directory `dist`.
 5. Open Grabit and paste a video link. **Grabit hosted** is the default; visitors do not enter any backend address or key.
 
-Hosted metadata lookups, device plans, job creation, progress, cancellation and ticket requests pass through `/api/backend`. The adapter forwards only approved JSON operations to the configured backend, adds the access key server-side, and refuses arbitrary destinations or redirects. Device-route media bytes go from the platform directly to the browser. Server-fallback bytes go from Render to the browser using a 60-second ticket. Media bytes never pass through a Vercel function.
+Hosted metadata lookups, source plans, job creation, progress, cancellation and ticket requests pass through `/api/backend`. The adapter forwards only approved JSON operations to the configured backend, adds the access key server-side, and refuses arbitrary destinations or redirects. Verified direct attachments transfer from the platform to the browser. Prepared files transfer from Render to the browser using a 60-second ticket. Media bytes never pass through a Vercel function.
 
 This removes the connection prompt; it does not create visitor authentication. Everyone who can use the hosted website shares its hosted backend and resource limits.
 
@@ -159,8 +158,8 @@ The chosen connection and custom backend address are remembered in local storage
 
 | Limit | Render blueprint | Local/self-hosted defaults |
 | --- | --- | --- |
-| Server fallback video length | 20 minutes | No application cap |
-| Server fallback finished file size | 150 MiB | No application cap |
+| Prepared video length | 20 minutes | No application cap |
+| Prepared file size | 150 MiB | No application cap |
 | Download execution timeout | 10 minutes | No application cap |
 | Link inspections | 6 per minute | No application rate cap |
 | Active processing | 1 operation | 1 operation |
@@ -168,7 +167,7 @@ The chosen connection and custom backend address are remembered in local storage
 | Ready-file availability | 15 minutes | 15 minutes |
 | Format cache | 10 minutes | 10 minutes |
 
-The backend owner controls limits through `GRABIT_MAX_FILE_MB`, `GRABIT_MAX_DURATION_SECONDS`, `GRABIT_JOB_TIMEOUT_SECONDS`, and `GRABIT_INSPECTIONS_PER_MINUTE`. **Zero disables each respective cap**; positive values enable it, without the former 500 MiB ceiling. Size, duration and execution limits apply to server preparation only; metadata discovery and device plans accept longer/larger recorded videos. Lookup rate limits still apply to metadata discovery in either route. Switching a browser to custom mode cannot remove a hosted server's policy.
+The backend owner controls limits through `GRABIT_MAX_FILE_MB`, `GRABIT_MAX_DURATION_SECONDS`, `GRABIT_JOB_TIMEOUT_SECONDS`, and `GRABIT_INSPECTIONS_PER_MINUTE`. **Zero disables each respective cap**; positive values enable it, without the former 500 MiB ceiling. Size, duration and execution limits apply to server preparation only; metadata discovery and source plans accept longer/larger recorded videos. Lookup rate limits still apply to metadata discovery in either route. Switching a browser to custom mode cannot remove a hosted server's policy.
 
 With a finite size cap, input streams are limited too. Temporary disk usage is checked during download progress and bounded separately to allow audio/video merging. Oversized final files are removed. Uncapped local downloads still depend on available disk space, network speed, platform restrictions and the computer staying on. There is no application-imposed daily or monthly download quota.
 

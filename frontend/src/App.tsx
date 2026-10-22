@@ -9,16 +9,11 @@ import { useDownloader } from './hooks/useDownloader'
 import { Settings } from './components/Settings'
 import { MediaResult } from './components/MediaResult'
 import { DownloadStatus } from './components/DownloadStatus'
-import { DeviceStatus } from './components/DeviceStatus'
-import { useDeviceDownload } from './hooks/useDeviceDownload'
-import { serverLimitMessage } from './lib/limits'
 import type { Connection, ServerConfig } from './types'
 
 function Downloader({ connection, onSettings }: { connection: Connection; onSettings: () => void }) {
   const api = useMemo(() => new GrabitApi(connection), [connection])
-  const { media, job, busy: serverBusy, error, inspect, createJob, cancel, save } = useDownloader(api)
-  const device = useDeviceDownload(api)
-  const busy = serverBusy || device.working
+  const { media, job, busy, error, notice, downloadStarted, inspect, download, cancel, retry } = useDownloader(api)
   const [url, setUrl] = useState('')
   const [clipboardError, setClipboardError] = useState('')
   const [elapsed, setElapsed] = useState(0)
@@ -26,8 +21,6 @@ function Downloader({ connection, onSettings }: { connection: Connection; onSett
   const input = useRef<HTMLInputElement>(null)
   const results = useRef<HTMLDivElement>(null)
   const active = !!job && ['queued', 'downloading', 'processing'].includes(job.status)
-  const fallbackBlocked = config && media && device.fallback ?
-    serverLimitMessage(media, device.fallback, config) : null
 
   useEffect(() => {
     const controller = new AbortController()
@@ -50,7 +43,6 @@ function Downloader({ connection, onSettings }: { connection: Connection; onSett
     setClipboardError('')
     setElapsed(0)
     if (connection.mode === 'custom' && !connection.url) { onSettings(); return }
-    device.reset()
     void inspect(url)
   }
 
@@ -82,15 +74,14 @@ function Downloader({ connection, onSettings }: { connection: Connection; onSett
         {(error.includes('key') || error.includes('Settings')) && <button className="text-button" type="button" onClick={onSettings}>Open Settings <ArrowRightIcon size={16} /></button>}
       </div></div>}
       <div ref={results}>
-        {media && !active && job?.status !== 'ready' && <MediaResult key={media.id} media={media} busy={busy} config={config}
-          onDownload={request => void device.download(media, request)} onServer={request => {
-            if (!serverLimitMessage(media, request, config)) { device.reset(); void createJob(request) }
-          }} />}
-        {device.device && !active && job?.status !== 'ready' && <DeviceStatus device={device.device} config={config} busy={busy} fallbackBlocked={fallbackBlocked}
-          onCancel={device.cancel} onFallback={() => { if (device.fallback && !fallbackBlocked) { void createJob(device.fallback); device.reset() } }} />}
-        {job && <DownloadStatus job={job} busy={busy} onCancel={() => void cancel()} onSave={() => void save()} />}
+        {media && <MediaResult key={media.id} media={media} busy={busy || active} onDownload={request => void download(request, config)} />}
+        {!job && notice && <div className="loading-note" role="status"><p>{notice}</p>
+          {busy && media && <button className="text-button" type="button" onClick={() => void cancel()}>Cancel</button>}
+        </div>}
+        {job && <DownloadStatus job={job} busy={busy} downloadStarted={downloadStarted}
+          onCancel={() => void cancel()} onDownload={!media ? () => void retry() : undefined} />}
       </div>
-      <div className="panel-foot"><span><CheckCircleIcon size={17} aria-hidden /> {connection.mode === 'hosted' ? 'Grabit hosted' : 'Your backend'}</span><span>Server fallback: {config ? [
+      <div className="panel-foot"><span><CheckCircleIcon size={17} aria-hidden /> {connection.mode === 'hosted' ? 'Grabit hosted' : 'Your backend'}</span><span>Preparation limits: {config ? [
         config.max_duration_seconds ? `${Math.floor(config.max_duration_seconds / 60)} min max` : null,
         config.max_file_mb ? `${config.max_file_mb} MiB max` : null,
       ].filter(Boolean).join(' · ') || 'No size or duration cap' : 'Personal downloader'}</span></div>
